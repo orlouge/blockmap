@@ -1,34 +1,35 @@
 {
   "schemaVersion": 1,
-  "id": "modid",
+  "id": "blockmap",
   "version": "${version}",
 
-  "name": "Example Mod",
+  "name": "BlockMap",
   "description": "This is an example description! Tell everyone what your mod is about!",
   "authors": [
-    "Me!"
+    "orlouge"
   ],
   "contact": {
-    "homepage": "https://fabricmc.net/",
-    "sources": "https://github.com/FabricMC/fabric-example-mod"
+    "homepage": "https://github.com/orlouge/blockmap",
+    "sources": "https://github.com/orlouge/blockmap"
   },
 
   "license": "CC0-1.0",
-  "icon": "assets/modid/icon.png",
+  "icon": "assets/blockmap/icon.png",
 
   "environment": "*",
   "entrypoints": {
-    "main": [
-      "net.fabricmc.example.ExampleMod"
+    "client": [
+      "io.github.orlouge.blockmap.BlockMapClientMod"
     ]
   },
   "mixins": [
-    "modid.mixins.json"
+    "blockmap.mixins.json"
   ],
+  "accessWidener" : "blockmap.accesswidener",
 
   "depends": {
     "fabricloader": ">=0.12.12",
-    "fabric": "*",
+    "fabric-key-binding-api-v1": "*",
     "minecraft": "1.18.x",
     "java": ">=17"
   },
