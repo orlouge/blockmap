@@ -32,7 +32,7 @@ public class BlockMapBuilder {
         final double[] boundsX = new double[]{Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY};
         final double[] boundsY = new double[]{Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY};
 
-        regionCount = Math.max(5, Math.min(100, blockMapEntries.size() / 70));
+        regionCount = Math.max(5, Math.min(100, blockMapEntries.size() / 75));
         regions = new Set[regionCount][regionCount];
 
         for (int regionX = 0; regionX < regionCount; regionX++) {
@@ -69,7 +69,7 @@ public class BlockMapBuilder {
         double maxDist = 0.01;
 
         int maxHoles = 1;
-        while (maxDist < 0.6) {
+        while (maxDist < 0.5) {
             BlockMapClientMod.LOGGER.info("enqueue " + sections.size());
             for (Section section : sections) {
                 Set<Section> currentNeighbors = getNeighbors(section);
@@ -89,20 +89,21 @@ public class BlockMapBuilder {
             BlockMapClientMod.LOGGER.info("merging " + mergeQueue.size());
             mergeAll(maxDist, maxHoles);
             maxDist *= 1.1;
-            maxHoles = maxDist > 0.5 ? -1 : maxHoles + 1;
+            maxHoles = maxDist > 0.35 ? -1 : maxDist < 0.05 ? 1 : maxHoles + 1;
         }
 
         BlockMapClientMod.LOGGER.info("stitching " + sections.size());
         for (Section section : sections) {
             PriorityQueue<SectionMerge> sectionQueue = new PriorityQueue<>();
             for (Section neighbor : getNeighbors(section)) {
-                sectionQueue.addAll(Section.forceMerge(section, neighbor));
+                sectionQueue.addAll(Section.forceMerge(section, neighbor, true));
             }
             if (sectionQueue.size() > 0) {
                 mergeQueue.add(sectionQueue);
             }
         }
 
+        boolean ordered = true;
         while (sections.size() > 1) {
             BlockMapClientMod.LOGGER.info("stitching/merging " + sections.size() + "," + mergeQueue.size());
             mergeAll(maxDist, -1);
@@ -111,13 +112,14 @@ public class BlockMapBuilder {
                 PriorityQueue<SectionMerge> sectionQueue = new PriorityQueue<>();
                 for (Section section2 : sections) {
                     if (section1 != section2) {
-                        sectionQueue.addAll(Section.forceMerge(section1, section2));
+                        sectionQueue.addAll(Section.forceMerge(section1, section2, ordered));
                     }
                 }
                 if (sectionQueue.size() > 0) {
                     mergeQueue.add(sectionQueue);
                 }
             }
+            ordered = false;
         }
     }
 
@@ -183,10 +185,12 @@ public class BlockMapBuilder {
     }
 
     private boolean tryMerge(SectionMerge merge, double maxDist, int maxHoles) {
-        boolean mergeOnX = merge.x;
-        Section section1 = merge.section1, section2 = merge.section2, merged = merge.resultSection;
+        boolean mergeOnX = merge.xAxis;
+        Section section1 = merge.section1, section2 = merge.section2;
 
         if (!sections.contains(section1) || !sections.contains(section2)) return false;
+
+        Section merged = merge.getMergedSection();
 
         for (Pair<Integer, Integer> regionCoords : section1.regions) {
             int regionX = regionCoords.getLeft(), regionY = regionCoords.getRight();
@@ -269,72 +273,104 @@ public class BlockMapBuilder {
         public static List<SectionMerge> merge(Section section1, Section section2, double maxDist, int maxHoles) {
             return Stream.of(
                     Section.ordered(section1, section2, true)
-                            ? SectionMerge.concat(section1, section2, true, 0, maxDist, maxHoles)
-                            : null,
+                            ? SectionMerge.concat(section1, section2, true, 0, maxDist, maxHoles, false, false)
+                            : SectionMerge.concat(section1, section2, true, 0, maxDist, maxHoles, true, false),
                     Section.ordered(section2, section1, true)
-                            ? SectionMerge.concat(section2, section1, true, 0, maxDist, maxHoles)
-                            : null,
+                            ? SectionMerge.concat(section2, section1, true, 0, maxDist, maxHoles, false, false)
+                            : SectionMerge.concat(section2, section1, true, 0, maxDist, maxHoles, true, false),
                     Section.ordered(section1, section2, false)
-                            ? SectionMerge.concat(section1, section2, false, 0, maxDist, maxHoles)
-                            : null,
+                            ? SectionMerge.concat(section1, section2, false, 0, maxDist, maxHoles, false, false)
+                            : SectionMerge.concat(section1, section2, false, 0, maxDist, maxHoles, true, false),
                     Section.ordered(section2, section1, false)
-                            ? SectionMerge.concat(section2, section1, false, 0, maxDist, maxHoles)
-                            : null
+                            ? SectionMerge.concat(section2, section1, false, 0, maxDist, maxHoles, false, false)
+                            : SectionMerge.concat(section2, section1, false, 0, maxDist, maxHoles, true, false)
             ).filter(sectionMerge -> sectionMerge != null)
              .collect(Collectors.toList());
         }
 
-        public static List<SectionMerge> forceMerge(Section section1, Section section2) {
-            SectionMerge mergeX = SectionMerge.concat(section1, section2, true, 1, Double.POSITIVE_INFINITY, -1);
-            SectionMerge mergeY = SectionMerge.concat(section1, section2, false, 1, Double.POSITIVE_INFINITY, -1);
-            if (Section.ordered(section1, section2, true)) {
-                return Section.ordered(section1, section2, false) ? List.of(mergeX, mergeY) : List.of(mergeX);
+        public static List<SectionMerge> forceMerge(Section section1, Section section2, boolean ordered) {
+            SectionMerge mergeX = SectionMerge.concat(section1, section2, true, 1, Double.POSITIVE_INFINITY, -1, false, false);
+            SectionMerge mergeY = SectionMerge.concat(section1, section2, false, 1, Double.POSITIVE_INFINITY, -1, false, false);
+            SectionMerge mergeXflipped = SectionMerge.concat(section1, section2, true, 1, Double.POSITIVE_INFINITY, -1, true, false);
+            SectionMerge mergeYflipped = SectionMerge.concat(section1, section2, false, 1, Double.POSITIVE_INFINITY, -1, true, false);
+            if (ordered) {
+                if (Section.ordered(section1, section2, true)) {
+                    return Section.ordered(section1, section2, false) ? List.of(mergeX, mergeY) : List.of(mergeX, mergeYflipped);
+                } else {
+                    return Section.ordered(section1, section2, false) ? List.of(mergeXflipped, mergeY) : List.of(mergeXflipped, mergeYflipped);
+                }
             } else {
-                return Section.ordered(section1, section2, false) ? List.of(mergeY) : List.of();
+                return List.of(mergeX, mergeY, mergeXflipped, mergeYflipped);
             }
         }
     }
 
     private static class SectionMerge implements Comparable {
-        private final Section section1, section2, resultSection;
+        private final Section section1, section2;
         private final double dist;
         private final int holes;
-        private final boolean x;
+        private final boolean xAxis;
 
-        private SectionMerge(Section section1, Section section2, Section resultSection, double dist, int holes, boolean x) {
+        private final int stride;
+        private final boolean flip1, flip2;
+        private final int m1, m2, o1, o2, width, height, off1, off2;
+
+        private SectionMerge(Section section1, Section section2, double dist, int holes, boolean x, int stride, boolean flip1, boolean flip2, int m1, int m2, int o1, int o2, int width, int height, int off1, int off2) {
             this.section1 = section1;
             this.section2 = section2;
-            this.resultSection = resultSection;
             this.dist = dist;
             this.holes = holes;
-            this.x = x;
+            this.xAxis = x;
+            this.stride = stride;
+            this.flip1 = flip1;
+            this.flip2 = flip2;
+            this.m1 = m1;
+            this.m2 = m2;
+            this.o1 = o1;
+            this.o2 = o2;
+            this.width = width;
+            this.height = height;
+            this.off1 = off1;
+            this.off2 = off2;
         }
 
-        public static SectionMerge concat(Section section1, Section section2, boolean xAxis, int stride, double discardDist, int maxHoles) {
+        public static SectionMerge concat(Section section1, Section section2, boolean xAxis, int stride, double discardDist, int maxHoles, boolean flip1, boolean flip2) {
             int m1 = xAxis ? section1.width : section1.height, m2 = xAxis ? section2.width : section2.height;
             int o1 = !xAxis ? section1.width : section1.height, o2 = !xAxis ? section2.width : section2.height;
             int width = xAxis ? section1.width + section2.width + stride : Math.max(section1.width, section2.width);
             int height = !xAxis ? section1.height + section2.height + stride : Math.max(section1.height, section2.height);
-            Entry[][] entries = new Entry[width][height];
             int holes = Math.abs(o2 - o1) * (m1 + m2 + stride) + stride * Math.max(o1, o2);
             int elongation = Math.abs(width - height) - Math.max(
                     Math.abs(section1.width - section1.height),
                     Math.abs(section2.width - section2.height)
             );
             elongation = elongation > 0 ? elongation * Math.max(width, height) * (1 + holes) : elongation;
-            elongation = elongation == 2 ? 0 : elongation;
+            elongation = width * height == 2 && elongation > 0 ? 0 : elongation;
             holes = Math.max(0, elongation + holes);
             if (maxHoles > 0 && holes > maxHoles) return null;
             double maxDist = Double.POSITIVE_INFINITY;
             int off1 = 0, off2 = 0;
+            double unit1 = xAxis ? (section1.maxY - section1.minY) / (double) section1.height
+                                 : (section1.maxX - section1.minX) / (double) section1.width;
+            double unit2 = xAxis ? (section2.maxY - section2.minY) / (double) section2.height
+                                 : (section2.maxX - section2.minX) / (double) section2.width;
             for (int offset = 0; offset <= Math.abs(o2 - o1); offset++) {
                 double currentDistance = Double.NEGATIVE_INFINITY;
                 int currentOff1 = o2 > o1 ? offset : 0, currentOff2 = o2 > o1 ? 0 : offset;
                 for (int j = 0; j < Math.min(o1, o2); j++) {
-                    Entry entry1 = xAxis ? section1.entries[m1 - 1][j + currentOff2] : section1.entries[j + currentOff2][m1 - 1];
-                    Entry entry2 = xAxis ? section2.entries[0][j + currentOff1] : section2.entries[j + currentOff1][0];
-                    if (entry1 != null && entry2 != null) {
-                        currentDistance = Math.max(currentDistance, entry1.color.distanceTo(entry2.color));
+                    if (stride == 0) {
+                        Entry entry1 = xAxis ? section1.entries[flip1 ? section1.width - m1 : m1 - 1][j + currentOff2]
+                                             : section1.entries[j + currentOff2][flip1 ? section1.height - m1 : m1 - 1];
+                        Entry entry2 = xAxis ? section2.entries[flip2 ? section2.width - 1 : 0][j + currentOff1]
+                                             : section2.entries[j + currentOff1][flip2 ? section2.height - 1 : 0];
+                        if (entry1 != null && entry2 != null) {
+                            currentDistance = Math.max(currentDistance, entry1.color.distanceTo(entry2.color));
+                        }
+                    } else {
+                        currentDistance = Math.max(currentDistance, Math.abs(
+                                (unit1 * (j + currentOff2) + (xAxis ? section1.minY : section1.minX)) -
+                                (unit2 * (j + currentOff1) + (xAxis ? section2.minY : section2.minX))
+                        ));
                     }
                 }
                 if (currentDistance < maxDist && currentDistance > Double.NEGATIVE_INFINITY) {
@@ -343,18 +379,45 @@ public class BlockMapBuilder {
                     off2 = currentOff2;
                 }
             }
+            if (stride != 0) {
+                maxDist *= 5;
+                maxDist += xAxis ? ((flip2 ? section2.maxX : section2.minX) - (flip1 ? section1.minX : section1.maxX))
+                                 : ((flip2 ? section2.maxY : section2.minY) - (flip1 ? section1.minY : section1.maxY));
+            }
             if (maxDist > discardDist) return null;
 
             holes = 0;
-            maxDist = maxDist + 0.03d * (double) holes;
+            maxDist = maxDist + 0.01d * (double) holes;
 
+            return new SectionMerge(
+                    section1,
+                    section2,
+                    maxDist,
+                    holes,
+                    xAxis,
+                    stride,
+                    flip1,
+                    flip2,
+                    m1,
+                    m2,
+                    o1,
+                    o2,
+                    width,
+                    height,
+                    off1,
+                    off2
+            );
+        }
+
+        public Section getMergedSection() {
+            Entry[][] entries = new Entry[width][height];
             int i;
             for (i = 0; i < m1; i++) {
                 for (int j = 0; j < o1; j++) {
                     if (xAxis) {
-                        entries[i][j + off1] = section1.entries[i][j];
+                        entries[i][j + off1] = section1.entries[flip1 ? section1.width - 1 - i : i][j];
                     } else {
-                        entries[j + off1][i] = section1.entries[j][i];
+                        entries[j + off1][i] = section1.entries[j][flip1 ? section1.height - 1 - i : i];
                     }
                 }
             }
@@ -362,67 +425,43 @@ public class BlockMapBuilder {
             for (int i2 = 0; i2 < m2; i2++) {
                 for (int j = 0; j < o2; j++) {
                     if (xAxis) {
-                        entries[i + i2][j + off2] = section2.entries[i2][j];
+                        entries[i + i2][j + off2] = section2.entries[flip2 ? section2.width - 1 - i2 : i2][j];
                     } else {
-                        entries[j + off2][i + i2] = section2.entries[j][i2];
+                        entries[j + off2][i + i2] = section2.entries[j][flip2 ? section2.height - 1 - i2 : i2];
                     }
                 }
             }
             Set<Pair<Integer, Integer>> regionCoords = section1.regions;
             regionCoords.addAll(section2.regions);
-            return new SectionMerge(
-                    section1,
-                    section2,
-                    new Section(
-                            entries,
-                            Math.min(section1.minX, section2.minX),
-                            Math.min(section1.minY, section2.minY),
-                            Math.min(section1.maxX, section2.maxX),
-                            Math.min(section1.maxY, section2.maxY),
-                            regionCoords
-                    ),
-                    maxDist,
-                    // xAxis ? (section2.minX - section1.maxX) / width + outDist(section1.minY, section1.maxY, section2.minY, section2.maxY)
-                    //       : (section2.minY - section2.maxY) / height + outDist(section1.minX, section1.maxX, section2.minX, section2.maxX),
-                    holes,
-                    xAxis
-            );
-        }
-
-        private static double outDist(double minY1, double maxY1, double minY2, double maxY2) {
-            double dist = 0;
-            if (minY1 <= minY2 && maxY1 <= maxY2) {
-
-            } else if (minY1 <= minY2 && maxY1 > maxY2) {
-                dist += (minY2 - minY1) + (maxY2 - maxY1);
-            } else if (minY1 > minY2 && maxY1 <= maxY2) {
-
-            } else if (minY1 > minY2 && maxY1 > maxY2) {
-                dist += (minY1 - minY2) + (maxY1 - maxY2);
+            double minX, minY, maxX, maxY;
+            minX = Math.min(section1.minX, section2.minX);
+            minY = Math.min(section1.minY, section2.minY);
+            maxX = Math.max(section1.maxX, section2.maxX);
+            maxY = Math.max(section1.maxY, section2.maxY);
+            if (xAxis) {
+                if (flip1) {
+                    minX = Math.min(section1.maxX, section2.minX);
+                    maxX = Math.max(section1.minX, section2.maxX);
+                } else if (flip2) {
+                    minX = Math.min(section1.minX, section2.maxX);
+                    maxX = Math.max(section1.maxX, section2.minX);
+                } else if (flip1 && flip2) {
+                    minX = Math.min(section1.maxX, section2.maxX);
+                    maxX = Math.max(section1.minX, section2.minX);
+                }
+            } else {
+                if (flip1) {
+                    minY = Math.min(section1.maxY, section2.minY);
+                    maxY = Math.max(section1.minY, section2.maxY);
+                } else if (flip2) {
+                    minY = Math.min(section1.minY, section2.maxY);
+                    maxY = Math.max(section1.maxY, section2.minY);
+                } else if (flip1 && flip2) {
+                    minY = Math.min(section1.maxY, section2.maxY);
+                    maxY = Math.max(section1.minY, section2.minY);
+                }
             }
-            return dist;
-        }
-
-        public static SectionMerge singletonConcat(Section section1, Section section2, boolean x) {
-            if (section1.entries.length != 1 || section2.entries.length != 1) {
-                throw new IllegalArgumentException("Must have length = 1");
-            }
-            section1.regions.addAll(section2.regions);
-            return new SectionMerge(
-                    section1,
-                    section2,
-                    new Section(
-                            x ? new Entry[][]{section1.entries[0], section2.entries[0]}
-                              : new Entry[][]{{section1.entries[0][0], section2.entries[0][0]}},
-                            section1.minX,
-                            section1.minY,
-                            section2.maxX,
-                            section2.maxY,
-                            section1.regions),
-                    section1.entries[0][0].color.distanceTo(section2.entries[0][0].color),
-                    0,
-                    x
-            );
+            return new Section(entries, minX, minY, maxX, maxY, regionCoords);
         }
 
         @Override

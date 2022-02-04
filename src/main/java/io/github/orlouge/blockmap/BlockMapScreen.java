@@ -15,8 +15,8 @@ import java.util.List;
 
 public class BlockMapScreen extends Screen {
     private final BlockMap averageBlockMap, dominantBlockMap;
-    private int offsetX = 0, offsetY = 0, size = 16;
-    private boolean resetSize = true;
+    private int offsetX = 0, offsetY = 0, previousOffsetX = 0, previousOffsetY = 0, size = 16, previousSize = -1;
+    private boolean resetSize = true, renderAverage = true;
 
     public BlockMapScreen(BlockMap averageBlockMap, BlockMap dominantBlockMap) {
         super(Text.of("BlockMap"));
@@ -27,13 +27,24 @@ public class BlockMapScreen extends Screen {
     @Override
     public void render(MatrixStack matrices, int mouseX, int mouseY, float delta) {
         super.render(matrices, mouseX, mouseY, delta);
-        if (resetSize) {
+        if (this.resetSize) {
             this.setSize(Math.min(width, height) / Math.max(averageBlockMap.height, averageBlockMap.width));
-            resetSize = false;
+            this.resetSize = false;
         }
         this.renderBackground(matrices);
-        this.renderBlockMap(matrices, averageBlockMap, mouseX, mouseY);
-        // this.renderBlockMap(matrices, dominantBlockMap);
+        this.renderBlockMap(matrices, this.renderAverage ? averageBlockMap : dominantBlockMap, mouseX, mouseY);
+    }
+
+    public void switchBlockMap() {
+        int prevX = previousOffsetX, prevY = previousOffsetY, prevSize = this.previousSize;
+        this.previousOffsetX = offsetX;
+        this.previousOffsetY = offsetY;
+        this.offsetX = prevX;
+        this.offsetY = prevY;
+        this.previousSize = size;
+        this.size = prevSize;
+        this.resetSize = this.resetSize || (prevSize == -1);
+        this.renderAverage = !this.renderAverage;
     }
 
     private void setSize(int size) {
@@ -97,14 +108,24 @@ public class BlockMapScreen extends Screen {
         // return super.mouseScrolled(mouseX, mouseY, amount);
         int oldSize = this.size;
         if (amount > 0) {
-            this.setSize(oldSize * 2);
+            this.setSize(oldSize + 1 + oldSize / 8);
         } else if (amount < 0) {
-            this.setSize(oldSize / 2);
+            this.setSize(oldSize - 1 - oldSize / 8);
         } else {
             return true;
         }
         offsetX = (offsetX - (int) mouseX) * this.size / oldSize + (int) mouseX;
         offsetY = (offsetY - (int) mouseY) * this.size / oldSize + (int) mouseY;
         return true;
+    }
+
+    @Override
+    public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
+        if (BlockMapClientMod.openBlockMapKeyBinding.matchesKey(keyCode, scanCode)) {
+            this.switchBlockMap();
+            return true;
+        } else {
+            return false;
+        }
     }
 }

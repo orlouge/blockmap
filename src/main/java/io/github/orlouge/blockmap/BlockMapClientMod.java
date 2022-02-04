@@ -27,7 +27,7 @@ public class BlockMapClientMod implements ClientModInitializer {
                 "category.blockmap.blockmap"
         ));
 
-        ClientTickEvents.END_WORLD_TICK.register(client -> {
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
             MinecraftClient mc = MinecraftClient.getInstance();
             if (openBlockMapKeyBinding.wasPressed()) {
                 if (averageBlockMap == null) {
@@ -37,8 +37,12 @@ public class BlockMapClientMod implements ClientModInitializer {
                     dominantBlockMap = BlockMapManager.getBlockMap(true);
                 }
                 while (openBlockMapKeyBinding.wasPressed());
-                if (mc.player != null && mc.currentScreen == null) {
-                    mc.setScreen(new BlockMapScreen(averageBlockMap, dominantBlockMap));
+                if (mc.player != null && mc.player.world != null) {
+                    if (mc.currentScreen == null) {
+                        mc.setScreen(new BlockMapScreen(averageBlockMap, dominantBlockMap));
+                    } else if (mc.currentScreen instanceof BlockMapScreen) {
+                        ((BlockMapScreen) mc.currentScreen).switchBlockMap();
+                    }
                 }
             }
         });
