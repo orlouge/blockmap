@@ -16,7 +16,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class BlockMapManager {
-    private static List<BlockMapEntry> entries = null;
+    private static LinkedList<BlockMapEntry> entries = null;
     private static BlockMap dominantBlockMap = null, averageBlockMap = null;
 
     public static BlockMap getBlockMap(boolean dominant) {
@@ -36,7 +36,18 @@ public class BlockMapManager {
     public static List<BlockMapEntry> getEntries() {
         if (entries == null) {
             Set<Map.Entry<RegistryKey<Block>, Block>> blockRegistry = Registry.BLOCK.getEntries();
-            entries = blockRegistry.stream().flatMap(entry -> getBlockColor(entry.getValue()).stream()).collect(Collectors.toList());
+            entries = new LinkedList<>();
+            Iterator<BlockMapEntry> entriesWithDuplicates =
+                    blockRegistry.stream()
+                    .flatMap(entry -> getBlockColor(entry.getValue()).stream())
+                    .sorted(Comparator.comparing(entry -> entry.averageColor().length()))
+                    .iterator();
+            while (entriesWithDuplicates.hasNext()) {
+                BlockMapEntry entry = entriesWithDuplicates.next();
+                if (entries.size() == 0 || !entries.getLast().tryMerge(entry)) {
+                    entries.addLast(entry);
+                }
+            }
         }
 
         return entries;
@@ -57,7 +68,8 @@ public class BlockMapManager {
                 block instanceof BigDripleafBlock ||
                 block instanceof AbstractRedstoneGateBlock ||
                 block instanceof OperatorBlock ||
-                block instanceof GrindstoneBlock
+                block instanceof GrindstoneBlock ||
+                block instanceof GrassBlock
         ) {
             return List.of();
         }

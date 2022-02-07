@@ -4,21 +4,24 @@ import net.minecraft.block.Block;
 import net.minecraft.client.texture.AbstractTexture;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
+import net.minecraft.util.Pair;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
+
+import java.io.IOException;
+import java.util.*;
 
 public class BlockMapEntry {
     private double dominantR, dominantG, dominantB;
     private double averageR, averageG, averageB;
     public final boolean hasDominant;
-    public final Block block;
-    public final Direction direction;
-    private final AbstractTexture texture;
+    private final Map<Block, Set<Direction>> blocks =
+            new TreeMap<>(Comparator.comparing(block -> block.getName().getString().length()));
+    private final NativeImageBackedTexture texture;
     private static final int DOMINANT_PERCENTAGE = 85, DOMINANT_MAXDIFF = 7000;
 
     public BlockMapEntry(Block block, NativeImage image, Direction direction) {
-        this.block = block;
-        this.direction = direction;
+        this.blocks.put(block, direction != null ? new TreeSet<>(List.of(direction)) : null);
         this.texture = new NativeImageBackedTexture(image);
         int width = image.getWidth(), height = image.getHeight(), dominantCount = 0;
 
@@ -83,11 +86,40 @@ public class BlockMapEntry {
         double y = (color.x + color.y + color.z) / 3d;
         double a = (color.z - y) / 2d;
         double c = (color.x - y) / 2d;
-        double b = (y - 0.5d) / 3d;
+        double b = (y - 0.5d) / 6d;
         return new Vec3d(a, b, c);
+    }
+
+    public Map<Block, Set<Direction>> getBlocks() {
+        return this.blocks;
     }
 
     public AbstractTexture getTexture() {
         return texture;
+    }
+
+    public boolean tryMerge(BlockMapEntry other) {
+        if (!this.isIdentical(other)) {
+            return false;
+        } else {
+            for (Block block : other.blocks.keySet()) {
+                Set<Direction> dirSet = this.blocks.computeIfAbsent(block, b -> new TreeSet<Direction>());
+                Set<Direction> otherDirSet = other.blocks.get(block);
+                if (dirSet != null && otherDirSet != null) {
+                    dirSet.addAll(otherDirSet);
+                } else {
+                    this.blocks.put(block, null);
+                }
+            }
+            return true;
+        }
+    }
+
+    public boolean isIdentical(BlockMapEntry other) {
+        try {
+            return Arrays.equals(this.texture.getImage().getBytes(), other.texture.getImage().getBytes());
+        } catch (IOException e) {
+            return false;
+        }
     }
 }

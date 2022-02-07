@@ -9,9 +9,11 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.Style;
 import net.minecraft.text.Text;
+import net.minecraft.util.math.Direction;
 
 import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class BlockMapScreen extends Screen {
     private final BlockMap averageBlockMap, dominantBlockMap;
@@ -73,13 +75,22 @@ public class BlockMapScreen extends Screen {
         }
 
         if (selectedEntry != null) {
-            OrderedText text = OrderedText.styledForwardsVisitedString(
-                    selectedEntry.block.getName().getString() +
-                    (selectedEntry.direction != null
-                            ? (" (" + selectedEntry.direction + ")") : ""),
-                    Style.EMPTY
-            );
-            this.renderOrderedTooltip(matrices, List.of(text), mouseX, mouseY);
+            List<OrderedText> text = selectedEntry.getBlocks().entrySet().stream()
+                            .map(entry -> {
+                                String dirString = "";
+                                if (entry.getValue() != null) {
+                                    dirString = " ( ";
+                                    for (Direction direction : entry.getValue()) {
+                                        dirString += direction + " ";
+                                    }
+                                    dirString += ")";
+                                }
+                                return OrderedText.styledForwardsVisitedString(
+                                        entry.getKey().getName().getString() + dirString,
+                                        Style.EMPTY
+                                );
+                            }).collect(Collectors.toList());
+            this.renderOrderedTooltip(matrices, text, mouseX, mouseY);
         }
     }
 
